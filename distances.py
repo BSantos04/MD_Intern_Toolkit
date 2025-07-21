@@ -7,39 +7,106 @@ import matplotlib.pyplot as plt
 import shutil
 import glob
 
-def extract_first_100_frames(xtc, tpr):
+def get_skip_value(xtc):
+    """
+    Summary:
+        Get the number of frames of a trajectory and calculates the skip value that represents the first 100 frames of it.
+
+    Parameters:
+        xtc: GROMACS trajectory file.
+    
+    Returns:
+        skip_value: Skip value tthat represents the first 100 frames of the trajectory.
     """
 
+    # Run a GROMCAS command-line to check the number of frames of the input trajectory
+    result = subprocess.run(f"gmx check -f {xtc}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # Get the stdout and stderr from the previous command-line
+    output = result.stdout.decode("utf-8") + result.stderr.decode("utf-8")
+
+    # Find the number of frames from the stdout and stderr
+    match = re.search(r"Last frame\s+(\d+)", output)
+
+    # If it finds, it will calculate the skip value needed to extract the desired first number of frames, which is 100, so we divide the total number of frames per 100 and round it to the units
+    if match:
+        last_frame = int(match.group(1))
+        total_frames = last_frame + 1
+        skip_value = int(total_frames / 100)
+        return skip_value
+    else:
+        # If it doesnt find anything, it will print a debugging message and leave the code
+        print("Frames not found!!!")
+        sys.exit(1)
+
+
+def extract_first_100_frames(xtc, tpr, skip_value):
     """
+    Summary: 
+        Extract a structure file for each of the first 100 frames of a trajectory.
+
+    Parameters: 
+        xtc: GROMACS trajectory file.
+        tpr: GROMACS trajectory topology file.
+        skip_value: Skip value thats gonna be used in order to determine the number of frames to be extracted.
+    """
+
+    # Get the basename of the input topology file, without the type identifier 
     basename = os.path.basename(tpr).split(".")[0]
 
-    subprocess.run(f"echo '1' | gmx trjconv -s {tpr} -f {xtc} -o {basename}_100frames_.gro -skip 80 -sep", shell=True)
+    # Run a GROMACS + shell script command-line in order to the first 100 frames of the trajectory, converting into .gro files each and making sure the selected option is 'Protein' (option 1)
+    subprocess.run(f"echo '1' | gmx trjconv -s {tpr} -f {xtc} -o {basename}_100frames_.gro -skip {skip_value} -sep", shell=True)
     
 def calculate_distances(tpr, gro, resid_one, resid_two):
-    
+    """
+    Summary:
+        Creates a dataframe containing every distance value between two residues of every frame extracted.
+
+    Paramaters:
+        tpr: GROMACS trajectory topology file.
+        gro: GROMACS structure file.
+        resid_one: Number of the first residue.
+        resid_two: Number of the second residue.
+
+    Returns:
+        dataframe: Pandas dataframe containing every distance between the two residues of every frames ectracted before.
+    """
+
+    # Run a GROMACS + shell script command-line that creates a customize index that include the group with the two residues e want to analyze
     subprocess.run(f"echo 'r {resid_one}\nr {resid_two}\nq' | gmx make_ndx -f {gro} -o index_{resid_one}_{resid_two}.ndx", shell=True)
 
+    # Create a variable to store the frames number and their respective distance
     data =[]
 
+    # Get the basename of the input topology file, without the type identifier 
     basename = os.path.basename(tpr).split(".")[0]
     
+    # Run a GROMACS command-line on every .gro frame file created previously and get the average distance between the two residues we want to analyze
     for i in range(101):
         results = subprocess.run(f"gmx distance -f {basename}_100frames_{i}.gro -s {tpr} -n index_{resid_one}_{resid_two}.ndx -select 'com of group 'r_{resid_one}' plus com of group 'r_{resid_two}''", shell=True, capture_output=True, text=True)
         
         match = re.search(r"Average distance:\s+([\d\.]+)", results.stdout)
         
+        # Add the frame number and respective distance to the variable and make sure if the distance was not found it will add a Nonetype 
         if match:
             distance = float(match.group(1))
         else:
             distance = None
         data.append([i, distance])
+
+    # Convert the variable into a Pandas dataframe
+    dataframe = pd.DataFrame(data, columns=["Frame", f"Distance between residues {resid_one} and {resid_two} (Å)"])
     
-    return pd.DataFrame(data, columns=["Frame", f"Distance between residues {resid_one} and {resid_two} (Å)"])
+    return dataframe
 
 if __name__=="__main__":
+
+    # Make sure every parameter is written
     if len(sys.argv)!=7:
-        print("Usage: python3 distances.py {dynamic.xtc} {dynamic.tpr} {dynamic.gro} {first residue} {second residue} {line color}")
+        print("Usage: python3 distances.py {dynamic.xtc} {dynamic.tpr} {dynamic.gro} {first residue} {second residue} {plot line color}")
     else:
+
+        # DEfine the input parameters to be used
         xtc = sys.argv[1]
         tpr = sys.argv[2]
         gro = sys.argv[3]
@@ -47,22 +114,28 @@ if __name__=="__main__":
         second_res = sys.argv[5] 
         color = sys.argv[6]
 
+        # Get the current working directory and basename of the input topology file, without the type identifier
         cwd = os.getcwd()
-        i = 1
-
         basename = os.path.basename(tpr).split(".")[0]
 
+        # Create a counter variable
+        i = 1
+
+        # If the storing directory is not created yet, it will create the directory
         if not os.path.exists(f"{basename}_{first_res}_{second_res}_distance"):
 
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance")
-            extract_first_100_frames(xtc, tpr)
+            skip_value = get_skip_value(xtc)
+            extract_first_100_frames(xtc, tpr, skip_value)
             df = calculate_distances(tpr, gro, first_res, second_res)
             print(df)
 
+            # Move every frame file to the new directory + the custom index file
             for file in glob.glob(f"{basename}_100frames_*.gro"):
                shutil.move(file, f"{basename}_{first_res}_{second_res}_distance/{file}")
             os.rename(f"{cwd}/index_{first_res}_{second_res}.ndx", f"{cwd}/{basename}_{first_res}_{second_res}_distance/index_{first_res}_{second_res}.ndx")
 
+            # Create a plot with every registered distance from the two residues during the first 100 frames
             plt.figure(figsize=(10, 6))
             plt.plot(df["Frame"], df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
             plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
@@ -72,6 +145,7 @@ if __name__=="__main__":
             plt.tight_layout()
             plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png")
 
+            # Create a plot with every registered distance from the two residues during the first 10000 ps
             plt.figure(figsize=(10, 6))
             plt.plot(df["Frame"]*100, df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
             plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
@@ -82,18 +156,23 @@ if __name__=="__main__":
             plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_time.png")
 
         else:
+            
+            # If the directory was already created, it will create another one with a numeration aside
             while os.path.exists(f"{basename}_{first_res}_{second_res}_distance({i})"):
                 i += 1
 
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance({i})")
-            extract_first_100_frames(xtc, tpr)
+            skip_value = get_skip_value(xtc)
+            extract_first_100_frames(xtc, tpr, skip_value)
             df = calculate_distances(tpr, gro, first_res, second_res)
             print(df)
 
+            # Move every frame file to the new directory + the custom index file
             for file in glob.glob(f"{basename}_100frames_*.gro"):
                shutil.move(file, f"{basename}_{first_res}_{second_res}_distance({i})/{file}")
             os.rename(f"{cwd}/index_{first_res}_{second_res}.ndx", f"{cwd}/{basename}_{first_res}_{second_res}_distance({i})/index_{first_res}_{second_res}.ndx")
 
+            # Create a plot with every registered distance from the two residues during the first 100 frames
             plt.figure(figsize=(10, 6))
             plt.plot(df["Frame"], df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
             plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
@@ -103,6 +182,7 @@ if __name__=="__main__":
             plt.tight_layout()
             plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png")
 
+            # Create a plot with every registered distance from the two residues during the first 10000 ps
             plt.figure(figsize=(10, 6))
             plt.plot(df["Frame"]*100, df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
             plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
