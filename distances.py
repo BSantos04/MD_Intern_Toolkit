@@ -69,7 +69,8 @@ def calculate_distances(tpr, gro, resid_one, resid_two):
         resid_two: Number of the second residue.
 
     Returns:
-        dataframe: Pandas dataframe containing every distance between the two residues of every frames ectracted before.
+        df: Pandas dataframe containing every distance between the two residues of every frames ectracted before.
+        ylims : Limits of the distance values.
     """
 
     # Run a GROMACS + shell script command-line that creates a customize index that include the group with the two residues e want to analyze
@@ -95,9 +96,74 @@ def calculate_distances(tpr, gro, resid_one, resid_two):
         data.append([i, distance])
 
     # Convert the variable into a Pandas dataframe
-    dataframe = pd.DataFrame(data, columns=["Frame", f"Distance between residues {resid_one} and {resid_two} (Å)"])
+    df = pd.DataFrame(data, columns=["Frame", f"Distance between residues {resid_one} and {resid_two} (Å)"])
     
-    return dataframe
+    return df
+
+def get_plots(frame_plot_path, time_plot_path, df, color):
+    """
+    Summary:
+        Generate line plots of the distances by frames and by time (ps).
+    Parameters:
+        frame_plot_path: Absolute path of the plot containing the distances by frames.
+        time_plot_path: Absolute path of the plot containing the distances by time (ps).
+        df: Pandas dataframe cotaining the data containing the distances of the first 100 frames.
+        color: Plot line color.
+    """
+
+    # Create a plot with every registered distance from the two residues during the first 100 frames
+    # Define the size of the plot
+    plt.figure(figsize=(10, 6))
+    # Define which data is gonna be represented by the X value and the Y value, such as the line color, marker size and linewidth
+    plt.plot(df["Frame"], df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}", markersize=5, linewidth=1)
+    # Define a title for the plot
+    plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
+    # Define a label for the X values
+    plt.xlabel("Frames")
+    # Define a label for the Y values
+    plt.ylabel(f"Distance between residues {first_res} and {second_res} (Å)")
+    # Rotate the X values tick labels by 45 degrees for better readability
+    plt.xticks(rotation=45)
+    # Adjust subplot parameters to give specified padding and prevent label overlap
+    plt.tight_layout()
+    # Define custom plot settings for font size, size of title and size of labels
+    plt.rcParams.update({
+        "font.size": 12,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+    })
+    # Save the plot as a PNG file
+    plt.savefig(frame_plot_path, dpi=300)
+
+    # Create a plot with every registered distance from the two residues during the first 10000 ps
+    # Define the size of the plot
+    plt.figure(figsize=(10, 6))
+    # Define which data is gonna be represented by the X value and the Y value, such as the line color, marker size and linewidth
+    plt.plot(df["Frame"]*100, df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}", markersize=5, linewidth=1)
+    # Define a title for the plot
+    plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
+    # Define a label for the X values
+    plt.xlabel("Time (ps)")
+    # Define a label for the Y values
+    plt.ylabel(f"Distance between residues {first_res} and {second_res} (Å)")
+    # Rotate the X values tick labels by 45 degrees for better readability
+    plt.xticks(rotation=45)
+    # Adjust subplot parameters to give specified padding and prevent label overlap
+    plt.tight_layout()
+    # Define custom plot settings for font size, size of title and size of labels
+    plt.rcParams.update({
+        "font.size": 12,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+    })
+    # Save the plot as a PNG file
+    plt.savefig(time_plot_path, dpi=300)
+
+
 
 if __name__=="__main__":
 
@@ -106,7 +172,7 @@ if __name__=="__main__":
         print("Usage: python3 distances.py {dynamic.xtc} {dynamic.tpr} {dynamic.gro} {first residue} {second residue} {plot line color}")
     else:
 
-        # DEfine the input parameters to be used
+        # Define the input parameters to be used
         xtc = sys.argv[1]
         tpr = sys.argv[2]
         gro = sys.argv[3]
@@ -124,10 +190,15 @@ if __name__=="__main__":
         # If the storing directory is not created yet, it will create the directory
         if not os.path.exists(f"{basename}_{first_res}_{second_res}_distance"):
 
+            # Create the storing directory
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance")
+            # Get the skip value for the frames extraction
             skip_value = get_skip_value(xtc)
+            # Extract the first 100 frames of the trajectory
             extract_first_100_frames(xtc, tpr, skip_value)
+            # Get a Pandas dataframe with the distances between the two residues over the first 100 frames
             df = calculate_distances(tpr, gro, first_res, second_res)
+            # Print the dataframe for debugging
             print(df)
 
             # Move every frame file to the new directory + the custom index file
@@ -135,25 +206,12 @@ if __name__=="__main__":
                shutil.move(file, f"{basename}_{first_res}_{second_res}_distance/{file}")
             os.rename(f"{cwd}/index_{first_res}_{second_res}.ndx", f"{cwd}/{basename}_{first_res}_{second_res}_distance/index_{first_res}_{second_res}.ndx")
 
-            # Create a plot with every registered distance from the two residues during the first 100 frames
-            plt.figure(figsize=(10, 6))
-            plt.plot(df["Frame"], df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
-            plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
-            plt.xlabel("Frames")
-            plt.ylabel(f"Distance between residues {first_res} and {second_res}")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png")
+            # Create the paths of the plot files
+            frame_plot_path = f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png"
+            time_plot_path = f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_time.png"
 
-            # Create a plot with every registered distance from the two residues during the first 10000 ps
-            plt.figure(figsize=(10, 6))
-            plt.plot(df["Frame"]*100, df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
-            plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
-            plt.xlabel("Time (ps)")
-            plt.ylabel(f"Distance between residues {first_res} and {second_res}")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_time.png")
+            # Build the plots with the values f the dataframe
+            get_plots(frame_plot_path, time_plot_path, df, color)
 
         else:
             
@@ -161,35 +219,25 @@ if __name__=="__main__":
             while os.path.exists(f"{basename}_{first_res}_{second_res}_distance({i})"):
                 i += 1
 
+            # Create the storing directory
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance({i})")
+            # Get the skip value for the frames extraction
             skip_value = get_skip_value(xtc)
+            # Extract the first 100 frames of the trajectory
             extract_first_100_frames(xtc, tpr, skip_value)
+            # Get a Pandas dataframe with the distances between the two residues over the first 100 frames
             df = calculate_distances(tpr, gro, first_res, second_res)
+            # Print the dataframe for debugging
             print(df)
+
+            # Create the path of the plot file
+            frame_plot_path = f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png({i})"
+            time_plot_path = f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_time.png({i})"
 
             # Move every frame file to the new directory + the custom index file
             for file in glob.glob(f"{basename}_100frames_*.gro"):
                shutil.move(file, f"{basename}_{first_res}_{second_res}_distance({i})/{file}")
             os.rename(f"{cwd}/index_{first_res}_{second_res}.ndx", f"{cwd}/{basename}_{first_res}_{second_res}_distance({i})/index_{first_res}_{second_res}.ndx")
 
-            # Create a plot with every registered distance from the two residues during the first 100 frames
-            plt.figure(figsize=(10, 6))
-            plt.plot(df["Frame"], df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
-            plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
-            plt.xlabel("Frames")
-            plt.ylabel(f"Distance between residues {first_res} and {second_res} (Å)")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_frames.png")
-
-            # Create a plot with every registered distance from the two residues during the first 10000 ps
-            plt.figure(figsize=(10, 6))
-            plt.plot(df["Frame"]*100, df[f"Distance between residues {first_res} and {second_res} (Å)"], marker="o", color=f"{color}")
-            plt.title(f"Distances of {first_res} and {second_res} on first 100 frames")
-            plt.xlabel("Time (ps)")
-            plt.ylabel(f"Distance between residues {first_res} and {second_res} (Å)")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{cwd}/{basename}_{first_res}_{second_res}_distance/{basename}_{first_res}_{second_res}_distance_by_time.png")
-
-
+            # Build the plots with the values f the dataframe
+            get_plots(frame_plot_path, time_plot_path, df, color)
