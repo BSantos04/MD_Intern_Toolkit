@@ -57,7 +57,7 @@ if __name__ == "__main__":
         res_2 = sys.argv[3]
         outfile = sys.argv[4]
 
-        #Generate the .csv and .xlsx files with desired aminoacids listed
+        # Generate the .csv and .xlsx files with desired aminoacids listed
         list_res(infile, res_1, res_2, outfile)
 
 
