@@ -7,16 +7,16 @@ import matplotlib.pyplot as plt
 import shutil
 import glob
 
-def get_skip_value(xtc):
+def get_time_step(xtc):
     """
     Summary:
-        Get the number of frames of a trajectory and calculates the skip value that represents the first 100 frames of it.
+        Get the time step per farme in a trajectory and calculates the time setp of the first 100 frames.
 
     Parameters:
         xtc: GROMACS trajectory file.
     
     Returns:
-        skip_value: Skip value tthat represents the first 100 frames of the trajectory.
+        time_step: Time step value that represents the first 100 frames of the trajectory.
     """
 
     # Run a GROMCAS command-line to check the number of frames of the input trajectory
@@ -25,22 +25,21 @@ def get_skip_value(xtc):
     # Get the stdout and stderr from the previous command-line
     output = result.stdout.decode("utf-8") + result.stderr.decode("utf-8")
 
-    # Find the number of frames from the stdout and stderr
-    match = re.search(r"Last frame\s+(\d+)", output)
+    # Find the timestep (ps) of 1 single frame from the stdout and stderr
+    time_match = re.search(r"^Step\s+\d+\s+(\d+)", output, re.MULTILINE)
 
-    # If it finds, it will calculate the skip value needed to extract the desired first number of frames, which is 100, so we divide the total number of frames per 100 and round it to the units
-    if match:
-        last_frame = int(match.group(1))
-        total_frames = last_frame + 1
-        skip_value = int(total_frames / 100)
-        return skip_value
+    # If it finds, it will calculate the time step needed to extract the desired first number of frames, which is 100, so we multiply the time step per 100 and round it to the units
+    if time_match:
+        ps = int(time_match.group(1))
+        time_step = (ps * 100) + 1
+        return time_step
     else:
         # If it doesnt find anything, it will print a debugging message and leave the code
-        print("Frames not found!!!")
+        print("Values not found!!!")
         sys.exit(1)
 
 
-def extract_first_100_frames(xtc, tpr, skip_value):
+def extract_first_100_frames(xtc, tpr, time_step):
     """
     Summary: 
         Extract a structure file for each of the first 100 frames of a trajectory.
@@ -55,7 +54,7 @@ def extract_first_100_frames(xtc, tpr, skip_value):
     basename = os.path.basename(tpr).split(".")[0]
 
     # Run a GROMACS + shell script command-line in order to the first 100 frames of the trajectory, converting into .gro files each and making sure the selected option is 'Protein' (option 1)
-    subprocess.run(f"echo '1' | gmx trjconv -s {tpr} -f {xtc} -o {basename}_100frames_.gro -skip {skip_value} -sep", shell=True)
+    subprocess.run(f"echo '1' | gmx trjconv -s {tpr} -f {xtc} -o {basename}_100frames_.gro -sep -b 0 -e {time_step}", shell=True)
     
 def calculate_distances(tpr, gro, resid_one, resid_two):
     """
@@ -192,10 +191,10 @@ if __name__=="__main__":
 
             # Create the storing directory
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance")
-            # Get the skip value for the frames extraction
-            skip_value = get_skip_value(xtc)
+            # Get the time step value for the frames extraction
+            tsetp_value = get_time_step(xtc)
             # Extract the first 100 frames of the trajectory
-            extract_first_100_frames(xtc, tpr, skip_value)
+            extract_first_100_frames(xtc, tpr, tsetp_value)
             # Get a Pandas dataframe with the distances between the two residues over the first 100 frames
             df = calculate_distances(tpr, gro, first_res, second_res)
             # Print the dataframe for debugging
@@ -221,10 +220,10 @@ if __name__=="__main__":
 
             # Create the storing directory
             os.mkdir(f"{basename}_{first_res}_{second_res}_distance({i})")
-            # Get the skip value for the frames extraction
-            skip_value = get_skip_value(xtc)
+            # Get the time step value for the frames extraction
+            tstep_value = get_time_step(xtc)
             # Extract the first 100 frames of the trajectory
-            extract_first_100_frames(xtc, tpr, skip_value)
+            extract_first_100_frames(xtc, tpr, tstep_value)
             # Get a Pandas dataframe with the distances between the two residues over the first 100 frames
             df = calculate_distances(tpr, gro, first_res, second_res)
             # Print the dataframe for debugging
